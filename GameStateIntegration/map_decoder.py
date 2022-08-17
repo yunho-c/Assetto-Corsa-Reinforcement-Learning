@@ -32,7 +32,7 @@ def slideVec2(point, angle=0, offset=0):
 	y = point.y - math.sin(angle * math.pi / 180) * offset
 	return vec2(x, y)
 
-class trackDetailNode:
+class TrackDetailNode:
 	def __init__(self, rawIdeal, prevRawIdeal, rawDetail):
 		self.id = rawIdeal[4]
 		self.position = vec2(rawIdeal[0], rawIdeal[2])
@@ -48,6 +48,35 @@ class trackDetailNode:
 		
 		self.wallLeft = slideVec2(self.position, -self.direction + 90, _wallLeft)
 		self.wallRight = slideVec2(self.position, -self.direction - 90, _wallRight)
+
+def decode_track(track_filename):
+
+	rawIdeal = []; detail = []
+
+	with open(track_filename, "rb") as buffer:
+		header, length, lapTime, sampleCount = struct.unpack("4i", buffer.read(4 * 4))
+
+		for i in range(length):
+			rawIdeal.append(struct.unpack("4f i", buffer.read(4 * 5)))
+
+		extraCount = struct.unpack("i", buffer.read(4))[0]
+		for i in range(extraCount):
+			prevRawIdeal = rawIdeal[i - 1] if i > 0 else rawIdeal[length - 1]
+			detail.append(
+			TrackDetailNode(rawIdeal[i], prevRawIdeal, struct.unpack("18f", buffer.read(4 * 18))))
+
+	A = np.zeros(shape=[2, length*2])
+	for i in range(length):
+		i_prev = i-1 if i > 0 else length-1
+		P1 = detail[i].wallRight.clone()
+		P2 = detail[i].wallLeft.clone()
+		# P3 = detail[i-1].wallLeft.clone()
+		# P4 = detail[i-1].wallRight.clone()
+
+		A[0, 2*i], A[1, 2*i] = P1.x, P1.y
+		A[0, 2*i+1], A[1, 2*i+1] = P2.x, P2.y
+
+	return A	
 
 
 def main():

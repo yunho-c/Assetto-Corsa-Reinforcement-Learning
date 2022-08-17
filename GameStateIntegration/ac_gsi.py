@@ -6,7 +6,7 @@ import dearpygui.dearpygui as dpg
 import cv2
 import numpy as np
 import struct
-from map_decoder import trackDetailNode
+from map_decoder import TrackDetailNode, decode_track
 
 import matplotlib.pyplot as plt # DEBUG
 
@@ -59,39 +59,15 @@ class AC_GSI:
     # 요원 자기자신의 행동 또한 되먹임 되어야 하는가?
 
     def create_map(self, track):
-    # using point cloud data, create minimap. fill strategy? unsure.
+    # using point cloud data, create minimap. fill strategy: quads.
+
+        self.map = np.zeros(shape=[500,500,3], dtype=np.uint8)
  
         fn = "./Assets/{}_fast_lane.ai".format(track)
 
-        self.map = np.zeros(shape=[500,500,3], dtype=np.uint8)
+        A = decode_track(fn)
 
-        rawIdeal = []
-        detail = []
-
-        with open(fn, "rb") as buffer:
-            header, length, lapTime, sampleCount = struct.unpack("4i", buffer.read(4 * 4))
-
-            for i in range(length):
-                rawIdeal.append(struct.unpack("4f i", buffer.read(4 * 5)))
-
-            extraCount = struct.unpack("i", buffer.read(4))[0]
-            for i in range(extraCount):
-                prevRawIdeal = rawIdeal[i - 1] if i > 0 else rawIdeal[length - 1]
-                detail.append(
-                trackDetailNode(rawIdeal[i], prevRawIdeal, struct.unpack("18f", buffer.read(4 * 18))))
-
-        A = np.zeros(shape=[2, length*2])
-        for i in range(length):
-            i_prev = i-1 if i > 0 else length-1
-            P1 = detail[i].wallRight.clone()
-            P2 = detail[i].wallLeft.clone()
-            # P3 = detail[i-1].wallLeft.clone()
-            # P4 = detail[i-1].wallRight.clone()
-
-            A[0, 2*i], A[1, 2*i] = P1.x, P1.y
-            A[0, 2*i+1], A[1, 2*i+1] = P2.x, P2.y
-
-
+        # fit map onto viewport shape
         x_min, x_max = A[0,:].min(), A[0,:].max()
         y_min, y_max = A[1,:].min(), A[1,:].max()
 
@@ -103,26 +79,18 @@ class AC_GSI:
         else: 
             sr = y_diff / 500
 
-        # sr = 4 # size ratio
-
         # print("Size Ratio:", round(sr, 2))
 
         # align centers
         view_center = (250,250)
         map_center = ((x_min+x_max)/2/sr, (y_min+y_max)/2/sr)
         offset = (view_center[0]- map_center[0],view_center[1]- map_center[1]) # for addition
-        # offset = ( map_center[0]-view_center[0], map_center[1]-view_center[1]) # for subtraction
 
-        # print("something") # DEBUG
-
-        for i in range(length):
-            # x, y = int(A[0,2*i]/sr+offset[0]), int(A[1,2*i]/sr+offset[1])
+        for i in range(A.shape[1]//2):
             x, y = int(A[0,2*i]/sr+offset[0]), int(A[1,2*i]/sr+offset[1])
-            # x, y = int(A[0,2*i]/sr), int(A[1,2*i]/sr)
             x, y = max(x, 0), max(y, 0) # prevent wall portaling
             try: self.map[y, x] = [255, 255, 255]
             except Exception as e: print(e)
-        
         
 
 def imdpg(img):
@@ -132,42 +100,42 @@ def imdpg(img):
 def main():
     s = AC_GSI()
 
-    s.create_map("monza_junior")
+    # s.create_map("monza_junior")
     s.create_map("spa")
 
-    # dpg.create_context()
+    dpg.create_context()
 
-    # # texture registry
-    # with dpg.texture_registry(show=False): # show=True
-    #     dpg.add_raw_texture(tag="minimap", width=s.map.shape[1], height=s.map.shape[0], default_value=imdpg(s.map), format=dpg.mvFormat_Float_rgb)
+    # texture registry
+    with dpg.texture_registry(show=False): # show=True
+        dpg.add_raw_texture(tag="minimap", width=s.map.shape[1], height=s.map.shape[0], default_value=imdpg(s.map), format=dpg.mvFormat_Float_rgb)
 
-    # with dpg.window(tag="primary_window"):
-    #     dpg.add_image("minimap")
-    #     dpg.add_text("Hello, world")
-    #     dpg.add_button(label="Save")
-    #     dpg.add_input_text(label="string", default_value="Quick brown fox")
-    #     dpg.add_slider_float(label="float", default_value=0.273, max_value=1)
+    with dpg.window(tag="primary_window"):
+        dpg.add_image("minimap")
+        dpg.add_text("Hello, world")
+        dpg.add_button(label="Save")
+        dpg.add_input_text(label="string", default_value="Quick brown fox")
+        dpg.add_slider_float(label="float", default_value=0.273, max_value=1)
 
-    # dpg.create_viewport(title='AC Game State Integration Visualizer', width=500, height=800)
-    # dpg.setup_dearpygui()
-    # dpg.show_viewport()
-    # dpg.set_primary_window("primary_window", True)
+    dpg.create_viewport(title='AC Game State Integration Visualizer', width=500, height=800)
+    dpg.setup_dearpygui()
+    dpg.show_viewport()
+    dpg.set_primary_window("primary_window", True)
 
-    # while dpg.is_dearpygui_running():
-    #     s.update()
+    while dpg.is_dearpygui_running():
+        s.update()
 
-    #     print("reward", s.reward())
-    #     print("current_lap_time:", s.current_time)
-    #     print("total_time:", s.total_time())
+        print("reward", s.reward())
+        print("current_lap_time:", s.current_time)
+        print("total_time:", s.total_time())
 
-    #     dpg.render_dearpygui_frame()
+        dpg.render_dearpygui_frame()
 
-    #     # time.sleep(1)
+        # time.sleep(1)
 
-    # dpg.destroy_context()
+    dpg.destroy_context()
 
-    plt.imshow(s.map)
-    plt.show()
+    # plt.imshow(s.map) # DEBUg
+    # plt.show() # DEBUG
 
 
 if __name__ == "__main__": main()
